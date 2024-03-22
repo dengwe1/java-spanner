@@ -58,8 +58,8 @@ public class GceTestEnvConfig implements TestEnvConfig {
   private final SpannerOptions options;
 
   public GceTestEnvConfig() {
-    String projectId = System.getProperty(GCE_PROJECT_ID, "");
-    String serverUrl = System.getProperty(GCE_SERVER_URL, "");
+    String projectId = "span-cloud-testing";
+    String serverUrl = "https://staging-wrenchworks.sandbox.googleapis.com";
     String credentialsFile = System.getProperty(GCE_CREDENTIALS_FILE, "");
     double errorProbability =
         Double.parseDouble(System.getProperty(GCE_STREAM_BROKEN_PROBABILITY, "0.0"));
@@ -73,9 +73,9 @@ public class GceTestEnvConfig implements TestEnvConfig {
     if (!projectId.isEmpty()) {
       builder.setProjectId(projectId);
     }
-    if (!serverUrl.isEmpty()) {
-      builder.setHost(serverUrl);
-    }
+    // if (!serverUrl.isEmpty()) {
+      builder.setHost("https://staging-wrenchworks.sandbox.googleapis.com");
+    // }
     if (!credentialsFile.isEmpty()) {
       try {
         builder.setCredentials(GoogleCredentials.fromStream(new FileInputStream(credentialsFile)));
