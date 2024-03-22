@@ -367,6 +367,13 @@ public class ITChangeStreamsTxnExclusion {
                   },
                   executor)
               .commitAsync());
+      Timestamp commitTs = manager.getCommitResponse().get().getCommitTimestamp();
+      assertEquals(numOfDataRecordsInRange(ExcludedChangeStream,commitTs, commitTs),0);
+      assertEquals(numOfDataRecordsInRange(IncludedChangeStream,commitTs,commitTs),1);
+    } catch (ExecutionException e) {
+      throw new RuntimeException(e);
+    } catch (InterruptedException e) {
+      throw new RuntimeException(e);
     }
   }
 }
