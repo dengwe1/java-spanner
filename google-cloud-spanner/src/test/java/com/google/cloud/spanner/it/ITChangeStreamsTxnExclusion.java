@@ -16,34 +16,15 @@
 package com.google.cloud.spanner.it;
 
 import com.google.api.core.ApiFutures;
-import static com.google.cloud.spanner.SpannerMatchers.isSpannerException;
-import static com.google.cloud.spanner.Type.array;
-import static com.google.cloud.spanner.Type.json;
-import static com.google.cloud.spanner.Type.struct;
-import static com.google.cloud.spanner.Type.timestamp;
-import static com.google.cloud.spanner.testing.EmulatorSpannerHelper.isUsingEmulator;
 import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
-import static org.junit.Assume.assumeFalse;
-import static org.junit.Assume.assumeTrue;
-
 import com.google.api.gax.rpc.ServerStream;
-import com.google.cloud.ByteArray;
-import com.google.cloud.Date;
 import com.google.cloud.Timestamp;
 import com.google.cloud.spanner.CommitResponse;
 import com.google.cloud.spanner.Database;
 import com.google.cloud.spanner.DatabaseClient;
 import com.google.cloud.spanner.Dialect;
-import com.google.cloud.spanner.ErrorCode;
 import com.google.cloud.spanner.IntegrationTestEnv;
-import com.google.cloud.spanner.Key;
-import com.google.cloud.spanner.KeySet;
 import com.google.cloud.spanner.Mutation;
 import com.google.cloud.spanner.TransactionRunner;
 import com.google.cloud.spanner.TransactionManager;
@@ -54,58 +35,32 @@ import com.google.cloud.spanner.MutationGroup;
 import com.google.cloud.spanner.Options;
 import com.google.cloud.spanner.ParallelIntegrationTest;
 import com.google.cloud.spanner.ResultSet;
-import com.google.cloud.spanner.SpannerException;
 import com.google.cloud.spanner.Statement;
 import com.google.cloud.spanner.Struct;
-import com.google.cloud.spanner.TimestampBound;
-import com.google.cloud.spanner.Type;
-import com.google.cloud.spanner.Value;
 import com.google.cloud.spanner.connection.ConnectionOptions;
 import static com.google.cloud.spanner.SpannerApiFutures.get;
-import com.google.cloud.spanner.it.ITChangeStreamsTxnExclusion;
-import com.google.cloud.spanner.testing.EmulatorSpannerHelper;
 import com.google.common.collect.ImmutableList;
-import com.google.protobuf.NullValue;
 import com.google.rpc.Code;
-import com.google.rpc.Status;
-import com.google.spanner.executor.v1.ChangeStreamRecord;
-import com.google.spanner.executor.v1.ChildPartitionsRecord;
-import com.google.spanner.executor.v1.DataChangeRecord;
-import com.google.spanner.executor.v1.HeartbeatRecord;
 import com.google.spanner.v1.BatchWriteResponse;
-import io.grpc.Context;
-import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Base64;
 import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
-import java.util.Map;
-import java.util.Random;
-import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
-import org.hamcrest.MatcherAssert;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.ClassRule;
-import org.junit.Ignore;
 import org.junit.Test;
 import org.junit.experimental.categories.Category;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
-import org.threeten.bp.Instant;
 
-/** Integration test for writing data to Cloud Spanner. */
+/** Integration test for change streams transaction exclusion in Cloud Spanner. */
 @Category(ParallelIntegrationTest.class)
 @RunWith(Parameterized.class)
 public class ITChangeStreamsTxnExclusion {
@@ -139,9 +94,6 @@ public class ITChangeStreamsTxnExclusion {
       "CREATE CHANGE STREAM TestCS2 FOR ALL"
   };
 
-  /** Sequence used to generate unique keys. */
-  private static int seq;
-
   private static DatabaseClient client;
 
   private static Timestamp startTs;
@@ -165,12 +117,6 @@ public class ITChangeStreamsTxnExclusion {
   public static void teardown() {
     ConnectionOptions.closeSpanner();
   }
-
-  private static String uniqueString() {
-    return String.format("k%04d", seq++);
-  }
-
-  private String lastKey;
 
   private boolean isNonNullDataChangeRecord(Struct row) {
     return !row.isNull("commit_timestamp");
@@ -196,7 +142,6 @@ public class ITChangeStreamsTxnExclusion {
                 .bind("endTimestamp").to(end)
                 .build());
     while (resultSet.next()) {
-      // Parses result set into change stream result format.
       final Struct row = resultSet.getCurrentRowAsStruct().getStructList(0).get(0);
       final List<Struct> child_partitions_record = row.getStructList("child_partitions_record");
       for(Struct record:child_partitions_record){
@@ -253,7 +198,7 @@ public class ITChangeStreamsTxnExclusion {
     CommitResponse response = client.writeWithOptions(Collections.singletonList(
         Mutation.newInsertOrUpdateBuilder("T1")
             .set("K")
-            .to(uniqueString())
+            .to("writeWithOptions")
             .set("V")
             .to(1)
             .build()),Options.excludeTxnFromChangeStreams());
@@ -266,7 +211,7 @@ public class ITChangeStreamsTxnExclusion {
     CommitResponse response = client.writeAtLeastOnceWithOptions(Collections.singletonList(
         Mutation.newInsertOrUpdateBuilder("T1")
             .set("K")
-            .to(uniqueString())
+            .to("writeAtLeastOnceWithOptions")
             .set("V")
             .to(1)
             .build()),Options.excludeTxnFromChangeStreams());
@@ -279,7 +224,7 @@ public class ITChangeStreamsTxnExclusion {
     ServerStream<BatchWriteResponse> responses  = client.batchWriteAtLeastOnce(ImmutableList.of(MutationGroup.of(
         Mutation.newInsertOrUpdateBuilder("T1")
             .set("K")
-            .to(uniqueString())
+            .to("batchWriteAtLeastOnceWithOptions")
             .set("V")
             .to(1)
             .build())),Options.excludeTxnFromChangeStreams());
@@ -296,7 +241,7 @@ public class ITChangeStreamsTxnExclusion {
   }
 
   @Test
-  public void executeDMLInRwTxn() {
+  public void writeInRwTxn() {
     Timestamp t1 = Timestamp.now();
     client
         .readWriteTransaction(Options.excludeTxnFromChangeStreams())
@@ -305,21 +250,26 @@ public class ITChangeStreamsTxnExclusion {
               Statement.of("INSERT INTO T1 (K,V) VALUES ('executeUpdate',1)"));
           transaction.batchUpdate(Collections.singletonList(Statement.of("INSERT INTO T1 (K,V) VALUES ('batchUpdate',2)")));
           transaction.executeUpdateAsync(
-              Statement.of("INSERT INTO T1 (K,V) VALUES ('executeUpdateAsync',1)"));
+              Statement.of("INSERT INTO T1 (K,V) VALUES ('executeUpdateAsync',3)"));
           transaction.batchUpdateAsync(Collections.singletonList(Statement.of("INSERT INTO T1 (K,V) VALUES ('batchUpdateAsync',4)")));
+          transaction.buffer(Mutation.newInsertOrUpdateBuilder("T1")
+              .set("K")
+              .to("bufferMutationsInRwTxn")
+              .set("V")
+              .to(5)
+              .build());
           return null;
         });
     Timestamp t2 = Timestamp.now();
     assertEquals(numOfDataRecordsInRange(ExcludedChangeStream,t1,t2),0);
     assertEquals(numOfDataRecordsInRange(IncludedChangeStream,t1,t2),1);
   }
-
   @Test
   public void executePartitionedDML() {
     client.writeWithOptions(Collections.singletonList(
         Mutation.newInsertOrUpdateBuilder("T1")
             .set("K")
-            .to(uniqueString())
+            .to("executePartitionedDML")
             .set("V")
             .to(1)
             .build()),Options.excludeTxnFromChangeStreams());
